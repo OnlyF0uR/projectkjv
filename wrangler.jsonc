@@ -16,7 +16,8 @@
 	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	"pages_build_output_dir": ".output",
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
