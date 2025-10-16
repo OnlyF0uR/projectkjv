@@ -398,12 +398,38 @@ const handleTextSelection = (event) => {
     const text = selection.toString().trim();
     
     if (text.length > 0) {
+      // Check if selection is within Bible content
+      const range = selection.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      let element = container.nodeType === 3 ? container.parentElement : container;
+      
+      // Traverse up to check if we're inside bible-content
+      let isInBibleContent = false;
+      let current = element;
+      while (current) {
+        if (current.classList?.contains('bible-content')) {
+          isInBibleContent = true;
+          break;
+        }
+        if (current.classList?.contains('nav-drawer') || 
+            current.classList?.contains('llm-panel') ||
+            current.classList?.contains('fixed-controls')) {
+          // Explicitly not in Bible content
+          break;
+        }
+        current = current.parentElement;
+      }
+      
+      if (!isInBibleContent) {
+        setContextMenuOpen(false);
+        return;
+      }
+      
       const verseData = extractVerseReference();
       setSelectedText(text);
       setSelectionData(verseData);
       
       // Position context menu at the end of the selection
-      const range = selection.getRangeAt(0);
       const rects = range.getClientRects();
       const lastRect = rects[rects.length - 1] || range.getBoundingClientRect();
       
