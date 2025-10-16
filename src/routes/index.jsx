@@ -29,6 +29,7 @@ export default function Home() {
   let topSentinelRef;
   let observer;
   let topObserver;
+  let isMouseDown = false;
 
   // Group chapters by book for better formatting
   const groupedChapters = () => {
@@ -387,9 +388,9 @@ export default function Home() {
     }
   };
 
-const handleTextSelection = (event) => {
+  const handleTextSelection = (event) => {
     // Don't show context menu for Ctrl/Shift selections, but close any existing menu
-    if (event.ctrlKey || event.shiftKey || event.metaKey) {
+    if (event && (event.ctrlKey || event.shiftKey || event.metaKey)) {
       setContextMenuOpen(false);
       return;
     }
@@ -569,13 +570,47 @@ const handleTextSelection = (event) => {
     
     // Add text selection listener (browser only)
     if (typeof document !== 'undefined') {
-      document.addEventListener('mouseup', handleTextSelection);
-      document.addEventListener('touchend', handleTextSelection);
-      // Close context menu when clicking elsewhere
+      // Track mouse state to avoid showing menu while dragging
+      document.addEventListener('mousedown', () => {
+        isMouseDown = true;
+      });
+      
+      document.addEventListener('mouseup', (e) => {
+        isMouseDown = false;
+        handleTextSelection(e);
+      });
+      
+      // Use selectionchange for better mobile support (only when not dragging)
+      document.addEventListener('selectionchange', () => {
+        // Only handle on mobile (when mouse is not being used for selection)
+        if (!isMouseDown) {
+          // Small delay to ensure selection is complete
+          setTimeout(() => {
+            const selection = window.getSelection();
+            if (selection.toString().trim()) {
+              handleTextSelection();
+            }
+          }, 100);
+        }
+      });
+      
+      // Close context menu when clicking elsewhere or selection is cleared
       document.addEventListener('mousedown', (e) => {
         if (!e.target.closest('.context-menu') && !e.target.closest('.verse-text')) {
           setContextMenuOpen(false);
         }
+      });
+      
+      // Also check on click to catch deselections
+      document.addEventListener('click', () => {
+        setTimeout(() => {
+          const selection = window.getSelection();
+          if (!selection.toString().trim()) {
+            setContextMenuOpen(false);
+            setSelectedText("");
+            setSelectionData(null);
+          }
+        }, 10);
       });
     }
   });
@@ -590,7 +625,6 @@ const handleTextSelection = (event) => {
     // Remove event listeners (browser only)
     if (typeof document !== 'undefined') {
       document.removeEventListener('mouseup', handleTextSelection);
-      document.removeEventListener('touchend', handleTextSelection);
     }
   });
 
@@ -703,29 +737,6 @@ const handleTextSelection = (event) => {
             <div class="nav-section">
               <h4 class="testament-title">Old Testament</h4>
               <For each={bibleStructure().ot}>
-                {(book, bookIdx) => (
-                  <div class="nav-book">
-                    <div class="book-name">{book.name}</div>
-                    <div class="chapter-list">
-                      <For each={book.chapters}>
-                        {(chapter, chapterIdx) => (
-                          <button
-                            class="chapter-link"
-                            onClick={() => navigateToChapter(bookIdx(), chapterIdx())}
-                          >
-                            {chapter.number}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
-            
-            <div class="nav-section">
-              <h4 class="testament-title">New Testament</h4>
-              <For each={bibleStructure().nt}>
                 {(book, bookIdx) => (
                   <div class="nav-book">
                     <div class="book-name">{book.name}</div>
