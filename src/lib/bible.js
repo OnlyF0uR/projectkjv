@@ -1,4 +1,4 @@
-import { cache } from "@solidjs/router";
+import { query } from "@solidjs/router";
 import bibleData from "../data/bible.json";
 
 /* The bible.json file has the following structure:
@@ -9,13 +9,13 @@ import bibleData from "../data/bible.json";
  */
 
 // Server-side cached function to get Bible data
-export const getBible = cache(async () => {
+export const getBible = query(async () => {
   "use server";
   return bibleData;
 }, "bible-data");
 
 // Get a specific range of chapters across books
-export const getChapters = cache(async (startBookIndex, startChapterIndex, count) => {
+export const getChapters = query(async (startBookIndex, startChapterIndex, count) => {
   "use server";
   const bible = await getBible();
   const allBooks = [...bible.ot, ...bible.nt];

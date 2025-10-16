@@ -17,6 +17,8 @@
   --nav-border: #e0e0e0;
   --button-bg: #f0f0f0;
   --button-hover: #e0e0e0;
+
+  --font-family-serif: 'Times New Roman', Times, serif;
 }
 
 .dark-mode {
@@ -35,11 +37,11 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  line-height: 1.6;
+  font-family: var(--font-family-serif);
+  line-height: 1.45;
   color: var(--text-primary);
   background-color: var(--bg-primary);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: none;
 }
 
 .bible-container {
@@ -55,7 +57,7 @@ body {
   padding: 40px;
   box-shadow: var(--shadow);
   border-radius: 8px;
-  transition: background-color 0.3s ease;
+  transition: none;
 }
 
 /* Fixed Controls */
@@ -70,14 +72,14 @@ body {
 }
 
 .theme-toggle,
-.nav-toggle {
+.nav-toggle,
+.llm-toggle {
   width: 48px;
   height: 48px;
   border-radius: 50%;
   border: none;
   background-color: var(--button-bg);
   color: var(--text-primary);
-  font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -86,6 +88,7 @@ body {
   transition: all 0.3s ease;
 }
 
+.llm-toggle:hover,
 .theme-toggle:hover,
 .nav-toggle:hover {
   background-color: var(--button-hover);
@@ -192,6 +195,7 @@ body {
   color: var(--book-title-color);
   border-bottom: 3px solid var(--border-color);
   padding-bottom: 16px;
+  font-family: var(--font-family-serif);
 }
 
 .chapter {
@@ -203,18 +207,20 @@ body {
   font-weight: 600;
   margin-bottom: 20px;
   color: var(--text-secondary);
+  font-family: var(--font-family-serif);
 }
 
 .verses {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .verse {
   display: flex;
   gap: 12px;
   line-height: 1.8;
+  font-family: var(--font-family-serif);
 }
 
 .verse-number {
@@ -227,6 +233,14 @@ body {
 
 .verse-text {
   color: var(--text-primary);
+}
+
+.top-sentinel {
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
 }
 
 .sentinel {
@@ -250,31 +264,186 @@ body {
   text-align: center;
 }
 
+/* LLM Response Panel */
+.llm-panel {
+  position: fixed;
+  bottom: -100%;
+  left: 0;
+  right: 0;
+  max-height: 60vh;
+  background-color: var(--nav-bg);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+  transition: bottom 0.3s ease;
+  z-index: 999;
+  overflow-y: auto;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.llm-panel.open {
+  bottom: 0;
+}
+
+.llm-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background-color: var(--nav-bg);
+  z-index: 1;
+}
+
+.llm-panel-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.llm-panel-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.llm-panel-close:hover {
+  background-color: var(--button-hover);
+  color: var(--text-primary);
+}
+
+.llm-panel-content {
+  padding: 24px;
+  min-height: 200px;
+}
+
+.llm-loading {
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 40px 0;
+}
+
+.llm-response-text {
+  color: var(--text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  font-size: 15px;
+}
+
+.llm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 998;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .nav-drawer {
-    width: 320px;
-    right: -320px;
+    width: 100%;
+    right: -100%;
+  }
+  
+  .nav-drawer.open {
+    right: 0;
   }
   
   .bible-content {
-    padding: 24px;
+    padding: 20px;
   }
   
   .book-title {
-    font-size: 28px;
+    font-size: 24px;
+    margin-bottom: 24px;
   }
   
   .chapter-number {
     font-size: 18px;
+    margin-bottom: 16px;
+  }
+  
+  .verse {
+    font-size: 15px;
+    gap: 8px;
+  }
+  
+  .verse-number {
+    min-width: 24px;
+    font-size: 13px;
+  }
+  
+  .fixed-controls {
+    top: 12px;
+    right: 12px;
+    gap: 8px;
+  }
+  
+  .theme-toggle,
+  .nav-toggle,
+  .llm-toggle {
+    width: 44px;
+    height: 44px;
+  }
+  
+  .llm-panel {
+    max-height: 70vh;
+  }
+  
+  .llm-panel-content {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .bible-content {
+    padding: 16px;
+  }
+  
+  .book-title {
+    font-size: 22px;
+  }
+  
+  .chapter-number {
+    font-size: 16px;
   }
   
   .verse {
     font-size: 14px;
+    gap: 6px;
   }
   
-  .fixed-controls {
-    top: 16px;
-    right: 16px;
+  .verse-number {
+    min-width: 20px;
+    font-size: 12px;
+  }
+  
+  .verses {
+    gap: 6px;
+  }
+  
+  .llm-panel-header {
+    padding: 16px 20px;
+  }
+  
+  .llm-panel-title {
+    font-size: 18px;
+  }
+  
+  .llm-response-text {
+    font-size: 14px;
   }
 }
