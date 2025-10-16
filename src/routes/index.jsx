@@ -460,13 +460,22 @@ const handleTextSelection = (event) => {
       const verseNumbers = container.querySelectorAll('.verse-number');
       verseNumbers.forEach(num => num.remove());
       
-      // Get the text content and clean up whitespace
-      cleanText = container.textContent
-        .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-        .trim();
+      // Process each verse paragraph to maintain spacing
+      const verses = container.querySelectorAll('.verse');
+      if (verses.length > 0) {
+        const verseTexts = Array.from(verses).map(v => 
+          v.textContent.trim()
+        ).filter(t => t.length > 0);
+        cleanText = verseTexts.join(' ');
+      } else {
+        // Fallback if no verse elements found
+        cleanText = container.textContent
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
     }
     
-    const textToCopy = reference ? `${reference}\n${cleanText}` : cleanText;
+    const textToCopy = reference ? `${reference}\n"${cleanText}"` : `"${cleanText}"`;
     
     try {
       await navigator.clipboard.writeText(textToCopy);
