@@ -229,6 +229,10 @@ body {
   min-width: 30px;
   flex-shrink: 0;
   font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .verse-text {
@@ -349,6 +353,49 @@ body {
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.3);
   z-index: 998;
+}
+
+/* Context Menu */
+.context-menu {
+  position: absolute;
+  background-color: var(--nav-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: none;
+  background-color: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.context-menu-item:hover {
+  background-color: var(--button-hover);
+}
+
+.context-menu-item svg {
+  flex-shrink: 0;
 }
 
 /* Responsive design */

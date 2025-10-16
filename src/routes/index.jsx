@@ -18,6 +18,9 @@ export default function Home() {
   const [navOpen, setNavOpen] = createSignal(false);
   const [bibleStructure, setBibleStructure] = createSignal(null);
   const [selectedText, setSelectedText] = createSignal("");
+  const [contextMenuOpen, setContextMenuOpen] = createSignal(false);
+  const [contextMenuPosition, setContextMenuPosition] = createSignal({ x: 0, y: 0 });
+  const [selectionData, setSelectionData] = createSignal(null);
   const [llmPanelOpen, setLlmPanelOpen] = createSignal(false);
   const [llmResponse, setLlmResponse] = createSignal("");
   const [llmLoading, setLlmLoading] = createSignal(false);
@@ -227,26 +230,244 @@ export default function Home() {
     }
   };
 
-  const handleTextSelection = () => {
+  // Extract verse information from selected text
+  const extractVerseReference = () => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return null;
+
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    
+    // Find all verse elements within the selection
+    let element = container.nodeType === 3 ? container.parentElement : container;
+    const selectedVerses = new Set();
+    let bookName = "";
+    let chapterNumber = "";
+
+    // Traverse up to find the book and chapter
+    let current = element;
+    while (current && !current.classList?.contains('book-section')) {
+      current = current.parentElement;
+    }
+    
+    if (current) {
+      const bookTitle = current.querySelector('.book-title');
+      if (bookTitle) bookName = bookTitle.textContent;
+      
+      // Find chapter for starting verse
+      let chapterElem = element;
+      while (chapterElem && !chapterElem.classList?.contains('chapter')) {
+        chapterElem = chapterElem.parentElement;
+      }
+      if (chapterElem) {
+        const chapterTitle = chapterElem.querySelector('.chapter-number');
+        if (chapterTitle) {
+          chapterNumber = chapterTitle.textContent.replace('Chapter ', '');
+        }
+      }
+    }
+
+    // Find all verse elements in selection
+    const verseElements = [];
+    const walker = document.createTreeWalker(
+      range.commonAncestorContainer.nodeType === 3 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: (node) => {
+          if (node.classList?.contains('verse')) {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
+      }
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      if (range.intersectsNode(node)) {
+        verseElements.push(node);
+      }
+    }
+
+    // Also check parent verse elements
+    let parent = element;
+    while (parent) {
+      if (parent.classList?.contains('verse') && range.intersectsNode(parent)) {
+        if (!verseElements.includes(parent)) {
+          verseElements.push(parent);
+        }
+      }
+      parent = parent.parentElement;
+    }
+
+    // Extract verse numbers and organize by book/chapter
+    const versesByLocation = {};
+    
+    verseElements.forEach(verseElem => {
+      const verseNumElem = verseElem.querySelector('.verse-number');
+      if (verseNumElem) {
+        const verseNum = verseNumElem.textContent.trim();
+        
+        // Find book and chapter for this verse
+        let chapterElem = verseElem.closest('.chapter');
+        let bookElem = verseElem.closest('.book-section');
+        
+        if (bookElem && chapterElem) {
+          const book = bookElem.querySelector('.book-title')?.textContent || '';
+          const chapter = chapterElem.querySelector('.chapter-number')?.textContent.replace('Chapter ', '') || '';
+          
+          const key = `${book}:${chapter}`;
+          if (!versesByLocation[key]) {
+            versesByLocation[key] = { book, chapter, verses: [] };
+          }
+          versesByLocation[key].verses.push(parseInt(verseNum));
+        }
+      }
+    });
+
+    return versesByLocation;
+  };
+
+  const formatVerseReference = (versesByLocation) => {
+    if (!versesByLocation || Object.keys(versesByLocation).length === 0) {
+      return "";
+    }
+
+    const locations = Object.values(versesByLocation);
+    
+    if (locations.length === 1) {
+      // Single chapter
+      const loc = locations[0];
+      const verses = loc.verses.sort((a, b) => a - b);
+      if (verses.length === 1) {
+        return `${loc.book} ${loc.chapter}:${verses[0]}`;
+      } else {
+        const ranges = [];
+        let start = verses[0];
+        let end = verses[0];
+        
+        for (let i = 1; i < verses.length; i++) {
+          if (verses[i] === end + 1) {
+            end = verses[i];
+          } else {
+            ranges.push(start === end ? `${start}` : `${start}-${end}`);
+            start = end = verses[i];
+          }
+        }
+        ranges.push(start === end ? `${start}` : `${start}-${end}`);
+        
+        return `${loc.book} ${loc.chapter}:${ranges.join(', ')}`;
+      }
+    } else {
+      // Multiple chapters or books
+      return locations.map(loc => {
+        const verses = loc.verses.sort((a, b) => a - b);
+        if (verses.length === 1) {
+          return `${loc.book} ${loc.chapter}:${verses[0]}`;
+        } else {
+          const ranges = [];
+          let start = verses[0];
+          let end = verses[0];
+          
+          for (let i = 1; i < verses.length; i++) {
+            if (verses[i] === end + 1) {
+              end = verses[i];
+            } else {
+              ranges.push(start === end ? `${start}` : `${start}-${end}`);
+              start = end = verses[i];
+            }
+          }
+          ranges.push(start === end ? `${start}` : `${start}-${end}`);
+          
+          return `${loc.book} ${loc.chapter}:${ranges.join(', ')}`;
+        }
+      }).join('; ');
+    }
+  };
+
+const handleTextSelection = (event) => {
+    // Don't show context menu for Ctrl/Shift selections, but close any existing menu
+    if (event.ctrlKey || event.shiftKey || event.metaKey) {
+      setContextMenuOpen(false);
+      return;
+    }
+
     const selection = window.getSelection();
     const text = selection.toString().trim();
     
     if (text.length > 0) {
+      const verseData = extractVerseReference();
       setSelectedText(text);
+      setSelectionData(verseData);
+      
+      // Position context menu at the end of the selection
+      const range = selection.getRangeAt(0);
+      const rects = range.getClientRects();
+      const lastRect = rects[rects.length - 1] || range.getBoundingClientRect();
+      
+      setContextMenuPosition({
+        x: lastRect.right,
+        y: lastRect.bottom + window.scrollY + 8
+      });
+      setContextMenuOpen(true);
     } else {
       setSelectedText("");
-      setLlmPanelOpen(false);
+      setSelectionData(null);
+      setContextMenuOpen(false);
     }
   };
 
-  const handleLLMQuery = async () => {
+  const handleCopy = async () => {
+    const reference = formatVerseReference(selectionData());
+    
+    // Get clean text without verse numbers
+    const selection = window.getSelection();
+    let cleanText = "";
+    
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const container = range.cloneContents();
+      
+      // Remove all verse number elements
+      const verseNumbers = container.querySelectorAll('.verse-number');
+      verseNumbers.forEach(num => num.remove());
+      
+      // Get the text content and clean up whitespace
+      cleanText = container.textContent
+        .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+        .trim();
+    }
+    
+    const textToCopy = reference ? `${reference}\n${cleanText}` : cleanText;
+    
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setContextMenuOpen(false);
+      // Clear selection
+      window.getSelection().removeAllRanges();
+      setSelectedText("");
+      setSelectionData(null);
+    } catch (error) {
+      console.error("Failed to copy:", error);
+    }
+  };
+
+  const handleExplain = async () => {
     if (!selectedText()) return;
     
+    setContextMenuOpen(false);
     setLlmPanelOpen(true);
     setLlmLoading(true);
     
+    const reference = formatVerseReference(selectionData());
+    const prompt = reference 
+      ? `Regarding ${reference}: ${selectedText()}` 
+      : selectedText();
+    
     try {
-      const response = await getLLMResponse(selectedText());
+      const response = await getLLMResponse(prompt);
       setLlmResponse(response.text);
     } catch (error) {
       console.error("Error fetching LLM response:", error);
@@ -315,6 +536,12 @@ export default function Home() {
     if (typeof document !== 'undefined') {
       document.addEventListener('mouseup', handleTextSelection);
       document.addEventListener('touchend', handleTextSelection);
+      // Close context menu when clicking elsewhere
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('.context-menu') && !e.target.closest('.verse-text')) {
+          setContextMenuOpen(false);
+        }
+      });
     }
   });
 
@@ -379,15 +606,33 @@ export default function Home() {
             )}
           </svg>
         </button>
-        <Show when={selectedText()}>
-          <button class="llm-toggle" onClick={handleLLMQuery} aria-label="Ask about selection">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      </div>
+
+      {/* Context Menu for Selection */}
+      <Show when={contextMenuOpen()}>
+        <div 
+          class="context-menu" 
+          style={{
+            left: `${contextMenuPosition().x}px`,
+            top: `${contextMenuPosition().y}px`
+          }}
+        >
+          <button class="context-menu-item" onClick={handleCopy}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="7" y="7" width="10" height="10" rx="1" stroke="currentColor" stroke-width="2" fill="none"/>
+              <path d="M3 3h10v2H5v8H3V3z" fill="currentColor"/>
+            </svg>
+            Copy
+          </button>
+          <button class="context-menu-item" onClick={handleExplain}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="2" fill="none"/>
               <text x="10" y="14" font-size="12" fill="currentColor" text-anchor="middle" font-weight="bold">?</text>
             </svg>
+            Explain
           </button>
-        </Show>
-      </div>
+        </div>
+      </Show>
 
       {/* LLM Response Panel */}
       <div class={`llm-panel ${llmPanelOpen() ? 'open' : ''}`}>
