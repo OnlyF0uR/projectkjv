@@ -745,6 +745,29 @@ export default function Home() {
                         {(chapter, chapterIdx) => (
                           <button
                             class="chapter-link"
+                            onClick={() => navigateToChapter(bookIdx(), chapterIdx())}
+                          >
+                            {chapter.number}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+            
+            <div class="nav-section">
+              <h4 class="testament-title">New Testament</h4>
+              <For each={bibleStructure().nt}>
+                {(book, bookIdx) => (
+                  <div class="nav-book">
+                    <div class="book-name">{book.name}</div>
+                    <div class="chapter-list">
+                      <For each={book.chapters}>
+                        {(chapter, chapterIdx) => (
+                          <button
+                            class="chapter-link"
                             onClick={() => navigateToChapter(bibleStructure().ot.length + bookIdx(), chapterIdx())}
                           >
                             {chapter.number}
