@@ -29,6 +29,8 @@ export default function Home() {
   let observer;
   let topObserver;
   let isMouseDown = false;
+  let isInteractingWithContextMenu = false;
+  let justClosedMenu = false;
 
   // Group chapters by book for better formatting
   const groupedChapters = () => {
@@ -394,6 +396,11 @@ export default function Home() {
       return;
     }
 
+    // Don't reopen if we just closed the menu
+    if (justClosedMenu) {
+      return;
+    }
+
     const selection = window.getSelection();
     const text = selection.toString().trim();
     
@@ -592,21 +599,36 @@ export default function Home() {
       // Track mouse state to avoid showing menu while dragging
       document.addEventListener('mousedown', (e) => {
         isMouseDown = true;
-        // Close context menu when starting any mouse interaction
-        if (!e.target.closest('.context-menu')) {
+        // Check if clicking on context menu
+        if (e.target.closest('.context-menu')) {
+          isInteractingWithContextMenu = true;
+        } else {
+          isInteractingWithContextMenu = false;
+          if (contextMenuOpen()) {
+            justClosedMenu = true;
+            setTimeout(() => {
+              justClosedMenu = false;
+            }, 150);
+          }
           setContextMenuOpen(false);
         }
       });
       
       document.addEventListener('mouseup', (e) => {
         isMouseDown = false;
-        handleTextSelection(e);
+        // Reset flag after a brief delay to allow menu actions to complete
+        setTimeout(() => {
+          isInteractingWithContextMenu = false;
+        }, 100);
+        if (!justClosedMenu) {
+          handleTextSelection(e);
+        }
       });
       
       // Use selectionchange for better mobile support (only when not dragging)
       document.addEventListener('selectionchange', () => {
         // Only handle on mobile (when mouse is not being used for selection)
-        if (!isMouseDown) {
+        if (!isMouseDown && !justClosedMenu) {
           // Small delay to ensure selection is complete
           setTimeout(() => {
             const selection = window.getSelection();
@@ -626,6 +648,10 @@ export default function Home() {
       
       // Also check on click to catch deselections
       document.addEventListener('click', () => {
+        // Don't close if interacting with context menu
+        if (isInteractingWithContextMenu || justClosedMenu) {
+          return;
+        }
         setTimeout(() => {
           const selection = window.getSelection();
           if (!selection.toString().trim()) {
