@@ -1,4 +1,5 @@
-import { createSignal, For, onMount, onCleanup, Show, createEffect } from "solid-js";
+import { createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import ThemeToggle from "~/components/ThemeToggle";
 import { getChapters, getBible } from "~/lib/bible";
 import { getLLMResponse } from "~/lib/llm";
 
@@ -12,19 +13,7 @@ export default function Home() {
   const [nextChapterIndex, setNextChapterIndex] = createSignal(0);
   const [prevBookIndex, setPrevBookIndex] = createSignal(0);
   const [prevChapterIndex, setPrevChapterIndex] = createSignal(0);
-  const getDarkModeInitial = () => {
-    if (typeof window === 'undefined') return false;
-    const savedTheme = localStorage.getItem('theme');
-    const isDark = savedTheme === 'dark';
-    // Apply theme class immediately to prevent flash
-    if (isDark) {
-      document.documentElement.classList.add('dark-mode');
-    } else {
-      document.documentElement.classList.remove('dark-mode');
-    }
-    return isDark;
-  };
-  const [darkMode, setDarkMode] = createSignal(getDarkModeInitial());
+  
   const [navOpen, setNavOpen] = createSignal(false);
   const [bibleStructure, setBibleStructure] = createSignal(null);
   const [selectedText, setSelectedText] = createSignal("");
@@ -554,17 +543,6 @@ export default function Home() {
     }
   };
 
-  // Apply theme immediately when darkMode changes
-  createEffect(() => {
-    if (darkMode()) {
-      document.documentElement.classList.add('dark-mode');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark-mode');
-      localStorage.setItem('theme', 'light');
-    }
-  });
-
   onMount(async () => {
     const bible = await getBible();
     setBibleStructure(bible);
@@ -673,35 +651,11 @@ export default function Home() {
     }
   });
 
-  const toggleTheme = () => {
-    setDarkMode(!darkMode());
-  };
-
   return (
     <main class="bible-container">
       {/* Fixed Controls */}
       <div class="fixed-controls">
-        <button class="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {darkMode() ? (
-              // Sun icon for light mode
-              <g>
-                <circle cx="10" cy="10" r="4" fill="currentColor"/>
-                <line x1="10" y1="2" x2="10" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="10" y1="16" x2="10" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="18" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="4" y1="10" x2="2" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="15.5" y1="4.5" x2="14.1" y2="5.9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="5.9" y1="14.1" x2="4.5" y2="15.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="15.5" y1="15.5" x2="14.1" y2="14.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="5.9" y1="5.9" x2="4.5" y2="4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </g>
-            ) : (
-              // Moon icon for dark mode
-              <path d="M17.39 15.14A7.33 7.33 0 0 1 11.75 1.6c.23-.11.56-.23.79-.34a8.19 8.19 0 0 0-5.41.45 9 9 0 1 0 7 16.58 8.42 8.42 0 0 0 4.29-3.84 5.3 5.3 0 0 1-1.03.69z" fill="black"/>
-            )}
-          </svg>
-        </button>
+        <ThemeToggle />
         <button class="nav-toggle" onClick={() => setNavOpen(!navOpen())} aria-label="Toggle navigation">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
             {navOpen() ? (
