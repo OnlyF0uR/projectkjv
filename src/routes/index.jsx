@@ -12,9 +12,19 @@ export default function Home() {
   const [nextChapterIndex, setNextChapterIndex] = createSignal(0);
   const [prevBookIndex, setPrevBookIndex] = createSignal(0);
   const [prevChapterIndex, setPrevChapterIndex] = createSignal(0);
-  const [darkMode, setDarkMode] = createSignal(
-    typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark'
-  );
+  const getDarkModeInitial = () => {
+    if (typeof window === 'undefined') return false;
+    const savedTheme = localStorage.getItem('theme');
+    const isDark = savedTheme === 'dark';
+    // Apply theme class immediately to prevent flash
+    if (isDark) {
+      document.documentElement.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+    }
+    return isDark;
+  };
+  const [darkMode, setDarkMode] = createSignal(getDarkModeInitial());
   const [navOpen, setNavOpen] = createSignal(false);
   const [bibleStructure, setBibleStructure] = createSignal(null);
   const [selectedText, setSelectedText] = createSignal("");
@@ -490,6 +500,36 @@ export default function Home() {
     }
   };
 
+  const getCleanTextFromSelection = () => {
+    const selection = window.getSelection();
+    let cleanText = "";
+    
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const container = range.cloneContents();
+      
+      // Remove all verse number elements
+      const verseNumbers = container.querySelectorAll('.verse-number');
+      verseNumbers.forEach(num => num.remove());
+      
+      // Process each verse paragraph to maintain spacing
+      const verses = container.querySelectorAll('.verse');
+      if (verses.length > 0) {
+        const verseTexts = Array.from(verses).map(v => 
+          v.textContent.trim()
+        ).filter(t => t.length > 0);
+        cleanText = verseTexts.join(' ');
+      } else {
+        // Fallback if no verse elements found
+        cleanText = container.textContent
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    }
+    
+    return cleanText;
+  };
+
   const handleExplain = async () => {
     if (!selectedText()) return;
     
@@ -498,9 +538,10 @@ export default function Home() {
     setLlmLoading(true);
     
     const reference = formatVerseReference(selectionData());
+    const cleanText = getCleanTextFromSelection();
     const prompt = reference 
-      ? `Regarding ${reference}: ${selectedText()}` 
-      : selectedText();
+      ? `${reference}: ${cleanText}` 
+      : cleanText;
     
     try {
       const response = await getLLMResponse(prompt);
@@ -571,8 +612,12 @@ export default function Home() {
     // Add text selection listener (browser only)
     if (typeof document !== 'undefined') {
       // Track mouse state to avoid showing menu while dragging
-      document.addEventListener('mousedown', () => {
+      document.addEventListener('mousedown', (e) => {
         isMouseDown = true;
+        // Close context menu when starting any mouse interaction
+        if (!e.target.closest('.context-menu')) {
+          setContextMenuOpen(false);
+        }
       });
       
       document.addEventListener('mouseup', (e) => {
