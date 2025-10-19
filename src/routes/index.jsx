@@ -13,17 +13,20 @@ export default function Home() {
   const [nextChapterIndex, setNextChapterIndex] = createSignal(0);
   const [prevBookIndex, setPrevBookIndex] = createSignal(0);
   const [prevChapterIndex, setPrevChapterIndex] = createSignal(0);
-  
+
   const [navOpen, setNavOpen] = createSignal(false);
   const [bibleStructure, setBibleStructure] = createSignal(null);
   const [selectedText, setSelectedText] = createSignal("");
   const [contextMenuOpen, setContextMenuOpen] = createSignal(false);
-  const [contextMenuPosition, setContextMenuPosition] = createSignal({ x: 0, y: 0 });
+  const [contextMenuPosition, setContextMenuPosition] = createSignal({
+    x: 0,
+    y: 0,
+  });
   const [selectionData, setSelectionData] = createSignal(null);
   const [llmPanelOpen, setLlmPanelOpen] = createSignal(false);
   const [llmResponse, setLlmResponse] = createSignal("");
   const [llmLoading, setLlmLoading] = createSignal(false);
-  
+
   let sentinelRef;
   let topSentinelRef;
   let observer;
@@ -31,13 +34,18 @@ export default function Home() {
   let isMouseDown = false;
   let isInteractingWithContextMenu = false;
   let justClosedMenu = false;
+  let loadMoreTimeout = null;
+  let loadPrevTimeout = null;
+  let lastLoadTime = 0;
+  let lastLoadPrevTime = 0;
+  const LOAD_COOLDOWN = 500; // Cooldown period in ms to prevent rapid successive loads
 
   // Group chapters by book for better formatting
   const groupedChapters = () => {
     const chapters_array = chapters();
     const grouped = [];
-    
-    chapters_array.forEach(chapter => {
+
+    chapters_array.forEach((chapter) => {
       const lastGroup = grouped[grouped.length - 1];
       if (lastGroup && lastGroup.bookName === chapter.bookName) {
         lastGroup.chapters.push(chapter);
@@ -45,26 +53,35 @@ export default function Home() {
         grouped.push({
           bookName: chapter.bookName,
           bookIndex: chapter.bookIndex,
-          chapters: [chapter]
+          chapters: [chapter],
         });
       }
     });
-    
+
     return grouped;
   };
 
   const loadMore = async () => {
     if (loading() || !hasMore()) return;
-    
+
+    // Check cooldown period to prevent rapid successive loads
+    const now = Date.now();
+    if (now - lastLoadTime < LOAD_COOLDOWN) {
+      return;
+    }
+    lastLoadTime = now;
+
     setLoading(true);
+
+    // Temporarily disconnect observer to prevent multiple triggers
+    if (observer && sentinelRef) {
+      observer.unobserve(sentinelRef);
+    }
+
     try {
-      const data = await getChapters(
-        nextBookIndex(),
-        nextChapterIndex(),
-        3
-      );
-      
-      setChapters(prev => [...prev, ...data.chapters]);
+      const data = await getChapters(nextBookIndex(), nextChapterIndex(), 5);
+
+      setChapters((prev) => [...prev, ...data.chapters]);
       setHasMore(data.hasMore);
       setNextBookIndex(data.nextBookIndex);
       setNextChapterIndex(data.nextChapterIndex);
@@ -72,22 +89,40 @@ export default function Home() {
       console.error("Error loading chapters:", error);
     } finally {
       setLoading(false);
+
+      // Reconnect observer after loading completes
+      if (observer && sentinelRef) {
+        observer.observe(sentinelRef);
+      }
     }
   };
 
   const loadPrevious = async () => {
     if (loadingPrev() || !hasPrev()) return;
-    
+
+    // Check cooldown period to prevent rapid successive loads
+    const now = Date.now();
+    if (now - lastLoadPrevTime < LOAD_COOLDOWN) {
+      return;
+    }
+    lastLoadPrevTime = now;
+
     setLoadingPrev(true);
     const scrollHeight = document.documentElement.scrollHeight;
-    
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+    // Temporarily disconnect observer to prevent multiple triggers
+    if (topObserver && topSentinelRef) {
+      topObserver.unobserve(topSentinelRef);
+    }
+
     try {
       const bible = await getBible();
       const allBooks = [...bible.ot, ...bible.nt];
-      
+
       let targetBookIndex = prevBookIndex();
       let targetChapterIndex = prevChapterIndex() - 1;
-      
+
       // Handle going to previous book
       if (targetChapterIndex < 0) {
         targetBookIndex--;
@@ -95,21 +130,24 @@ export default function Home() {
           targetChapterIndex = allBooks[targetBookIndex].chapters.length - 1;
         }
       }
-      
+
       if (targetBookIndex < 0) {
         setHasPrev(false);
         setLoadingPrev(false);
         return;
       }
-      
+
       // Load 3 chapters backwards
       const chaptersToLoad = [];
       let loadCount = 0;
       let currentBookIdx = targetBookIndex;
       let currentChapterIdx = targetChapterIndex;
-      
-      while (loadCount < 3 && currentBookIdx >= 0) {
-        if (currentChapterIdx >= 0 && currentChapterIdx < allBooks[currentBookIdx].chapters.length) {
+
+      while (loadCount < 5 && currentBookIdx >= 0) {
+        if (
+          currentChapterIdx >= 0 &&
+          currentChapterIdx < allBooks[currentBookIdx].chapters.length
+        ) {
           const book = allBooks[currentBookIdx];
           const chapter = book.chapters[currentChapterIdx];
           chaptersToLoad.unshift({
@@ -117,7 +155,7 @@ export default function Home() {
             bookIndex: currentBookIdx,
             chapterNumber: chapter.number,
             chapterIndex: currentChapterIdx,
-            verses: chapter.verses
+            verses: chapter.verses,
           });
           loadCount++;
           currentChapterIdx--;
@@ -128,10 +166,10 @@ export default function Home() {
           }
         }
       }
-      
+
       if (chaptersToLoad.length > 0) {
-        setChapters(prev => [...chaptersToLoad, ...prev]);
-        
+        setChapters((prev) => [...chaptersToLoad, ...prev]);
+
         // Update previous indices to the first chapter we just loaded
         const firstChapter = chaptersToLoad[0];
         setPrevBookIndex(firstChapter.bookIndex);
@@ -140,55 +178,70 @@ export default function Home() {
       } else {
         setHasPrev(false);
       }
-      
-      // Maintain scroll position
-      setTimeout(() => {
+
+      // Maintain scroll position more reliably
+      requestAnimationFrame(() => {
         const newScrollHeight = document.documentElement.scrollHeight;
-        window.scrollTo(0, newScrollHeight - scrollHeight);
-      }, 0);
+        const scrollDiff = newScrollHeight - scrollHeight;
+        window.scrollTo(0, scrollTop + scrollDiff);
+      });
     } catch (error) {
       console.error("Error loading previous chapters:", error);
     } finally {
       setLoadingPrev(false);
+
+      // Reconnect observer after loading completes
+      if (topObserver && topSentinelRef) {
+        topObserver.observe(topSentinelRef);
+      }
     }
   };
 
   const navigateToChapter = async (bookIndex, chapterIndex) => {
-    setChapters([]);
+    // Properly reset all state before navigation
+    setNavOpen(false);
     setLoading(false);
     setLoadingPrev(false);
-    setNavOpen(false);
-    
+    setHasMore(true);
+    setHasPrev(false);
+
+    // Clear chapters and force a re-render
+    setChapters([]);
+
+    // Small delay to ensure state is cleared before loading new content
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     try {
       const bible = await getBible();
       const allBooks = [...bible.ot, ...bible.nt];
-      
+
       // Calculate where to start loading (2 chapters before target)
       let startBookIndex = bookIndex;
       let startChapterIndex = chapterIndex - 2;
-      
+
       // Adjust if we're going into previous books
       while (startChapterIndex < 0 && startBookIndex > 0) {
         startBookIndex--;
-        startChapterIndex = allBooks[startBookIndex].chapters.length + startChapterIndex;
+        startChapterIndex =
+          allBooks[startBookIndex].chapters.length + startChapterIndex;
       }
-      
+
       // Don't go below book 0, chapter 0
       if (startChapterIndex < 0) {
         startChapterIndex = 0;
         startBookIndex = 0;
       }
-      
+
       // Load 5 chapters starting from the calculated position
       const data = await getChapters(startBookIndex, startChapterIndex, 5);
-      
+
       setChapters(data.chapters);
-      
+
       // Set up forward loading (continues after the loaded chapters)
       setNextBookIndex(data.nextBookIndex);
       setNextChapterIndex(data.nextChapterIndex);
       setHasMore(data.hasMore);
-      
+
       // Set up backward loading (starts from the first loaded chapter)
       if (data.chapters.length > 0) {
         const firstChapter = data.chapters[0];
@@ -196,36 +249,47 @@ export default function Home() {
         setPrevChapterIndex(firstChapter.chapterIndex);
         setHasPrev(firstChapter.bookIndex > 0 || firstChapter.chapterIndex > 0);
       }
-      
+
       // Find and scroll to the target chapter
       setTimeout(() => {
         // Find the chapter element that matches our target
         const targetChapter = data.chapters.find(
-          ch => ch.bookIndex === bookIndex && ch.chapterIndex === chapterIndex
+          (ch) =>
+            ch.bookIndex === bookIndex && ch.chapterIndex === chapterIndex,
         );
-        
+
         if (targetChapter) {
           // Find the DOM element for this chapter
-          const chapterElements = document.querySelectorAll('.chapter');
+          const chapterElements = document.querySelectorAll(".chapter");
           for (let elem of chapterElements) {
-            const chapterTitle = elem.querySelector('.chapter-number');
-            if (chapterTitle && chapterTitle.textContent === `Chapter ${targetChapter.chapterNumber}`) {
+            const chapterTitle = elem.querySelector(".chapter-number");
+            if (
+              chapterTitle &&
+              chapterTitle.textContent ===
+                `Chapter ${targetChapter.chapterNumber}`
+            ) {
               // Get the book section
-              const bookSection = elem.closest('.book-section');
-              const bookTitle = bookSection?.querySelector('.book-title');
-              if (bookTitle && bookTitle.textContent === targetChapter.bookName) {
+              const bookSection = elem.closest(".book-section");
+              const bookTitle = bookSection?.querySelector(".book-title");
+              if (
+                bookTitle &&
+                bookTitle.textContent === targetChapter.bookName
+              ) {
                 // Scroll to this chapter with some offset for better visibility
                 const yOffset = -20;
-                const y = elem.getBoundingClientRect().top + window.pageYOffset + yOffset;
-                window.scrollTo({ top: y, behavior: 'smooth' });
+                const y =
+                  elem.getBoundingClientRect().top +
+                  window.pageYOffset +
+                  yOffset;
+                window.scrollTo({ top: y, behavior: "smooth" });
                 return;
               }
             }
           }
         }
-        
+
         // Fallback: scroll to top if we can't find the exact chapter
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        window.scrollTo({ top: 0, behavior: "instant" });
       }, 100);
     } catch (error) {
       console.error("Error navigating to chapter:", error);
@@ -239,32 +303,33 @@ export default function Home() {
 
     const range = selection.getRangeAt(0);
     const container = range.commonAncestorContainer;
-    
+
     // Find all verse elements within the selection
-    let element = container.nodeType === 3 ? container.parentElement : container;
+    let element =
+      container.nodeType === 3 ? container.parentElement : container;
     const selectedVerses = new Set();
     let bookName = "";
     let chapterNumber = "";
 
     // Traverse up to find the book and chapter
     let current = element;
-    while (current && !current.classList?.contains('book-section')) {
+    while (current && !current.classList?.contains("book-section")) {
       current = current.parentElement;
     }
-    
+
     if (current) {
-      const bookTitle = current.querySelector('.book-title');
+      const bookTitle = current.querySelector(".book-title");
       if (bookTitle) bookName = bookTitle.textContent;
-      
+
       // Find chapter for starting verse
       let chapterElem = element;
-      while (chapterElem && !chapterElem.classList?.contains('chapter')) {
+      while (chapterElem && !chapterElem.classList?.contains("chapter")) {
         chapterElem = chapterElem.parentElement;
       }
       if (chapterElem) {
-        const chapterTitle = chapterElem.querySelector('.chapter-number');
+        const chapterTitle = chapterElem.querySelector(".chapter-number");
         if (chapterTitle) {
-          chapterNumber = chapterTitle.textContent.replace('Chapter ', '');
+          chapterNumber = chapterTitle.textContent.replace("Chapter ", "");
         }
       }
     }
@@ -272,22 +337,22 @@ export default function Home() {
     // Find all verse elements in selection
     const verseElements = [];
     const walker = document.createTreeWalker(
-      range.commonAncestorContainer.nodeType === 3 
-        ? range.commonAncestorContainer.parentElement 
+      range.commonAncestorContainer.nodeType === 3
+        ? range.commonAncestorContainer.parentElement
         : range.commonAncestorContainer,
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: (node) => {
-          if (node.classList?.contains('verse')) {
+          if (node.classList?.contains("verse")) {
             return NodeFilter.FILTER_ACCEPT;
           }
           return NodeFilter.FILTER_SKIP;
-        }
-      }
+        },
+      },
     );
 
     let node;
-    while (node = walker.nextNode()) {
+    while ((node = walker.nextNode())) {
       if (range.intersectsNode(node)) {
         verseElements.push(node);
       }
@@ -296,7 +361,7 @@ export default function Home() {
     // Also check parent verse elements
     let parent = element;
     while (parent) {
-      if (parent.classList?.contains('verse') && range.intersectsNode(parent)) {
+      if (parent.classList?.contains("verse") && range.intersectsNode(parent)) {
         if (!verseElements.includes(parent)) {
           verseElements.push(parent);
         }
@@ -306,20 +371,23 @@ export default function Home() {
 
     // Extract verse numbers and organize by book/chapter
     const versesByLocation = {};
-    
-    verseElements.forEach(verseElem => {
-      const verseNumElem = verseElem.querySelector('.verse-number');
+
+    verseElements.forEach((verseElem) => {
+      const verseNumElem = verseElem.querySelector(".verse-number");
       if (verseNumElem) {
         const verseNum = verseNumElem.textContent.trim();
-        
+
         // Find book and chapter for this verse
-        let chapterElem = verseElem.closest('.chapter');
-        let bookElem = verseElem.closest('.book-section');
-        
+        let chapterElem = verseElem.closest(".chapter");
+        let bookElem = verseElem.closest(".book-section");
+
         if (bookElem && chapterElem) {
-          const book = bookElem.querySelector('.book-title')?.textContent || '';
-          const chapter = chapterElem.querySelector('.chapter-number')?.textContent.replace('Chapter ', '') || '';
-          
+          const book = bookElem.querySelector(".book-title")?.textContent || "";
+          const chapter =
+            chapterElem
+              .querySelector(".chapter-number")
+              ?.textContent.replace("Chapter ", "") || "";
+
           const key = `${book}:${chapter}`;
           if (!versesByLocation[key]) {
             versesByLocation[key] = { book, chapter, verses: [] };
@@ -338,7 +406,7 @@ export default function Home() {
     }
 
     const locations = Object.values(versesByLocation);
-    
+
     if (locations.length === 1) {
       // Single chapter
       const loc = locations[0];
@@ -349,7 +417,7 @@ export default function Home() {
         const ranges = [];
         let start = verses[0];
         let end = verses[0];
-        
+
         for (let i = 1; i < verses.length; i++) {
           if (verses[i] === end + 1) {
             end = verses[i];
@@ -359,33 +427,35 @@ export default function Home() {
           }
         }
         ranges.push(start === end ? `${start}` : `${start}-${end}`);
-        
-        return `${loc.book} ${loc.chapter}:${ranges.join(', ')}`;
+
+        return `${loc.book} ${loc.chapter}:${ranges.join(", ")}`;
       }
     } else {
       // Multiple chapters or books
-      return locations.map(loc => {
-        const verses = loc.verses.sort((a, b) => a - b);
-        if (verses.length === 1) {
-          return `${loc.book} ${loc.chapter}:${verses[0]}`;
-        } else {
-          const ranges = [];
-          let start = verses[0];
-          let end = verses[0];
-          
-          for (let i = 1; i < verses.length; i++) {
-            if (verses[i] === end + 1) {
-              end = verses[i];
-            } else {
-              ranges.push(start === end ? `${start}` : `${start}-${end}`);
-              start = end = verses[i];
+      return locations
+        .map((loc) => {
+          const verses = loc.verses.sort((a, b) => a - b);
+          if (verses.length === 1) {
+            return `${loc.book} ${loc.chapter}:${verses[0]}`;
+          } else {
+            const ranges = [];
+            let start = verses[0];
+            let end = verses[0];
+
+            for (let i = 1; i < verses.length; i++) {
+              if (verses[i] === end + 1) {
+                end = verses[i];
+              } else {
+                ranges.push(start === end ? `${start}` : `${start}-${end}`);
+                start = end = verses[i];
+              }
             }
+            ranges.push(start === end ? `${start}` : `${start}-${end}`);
+
+            return `${loc.book} ${loc.chapter}:${ranges.join(", ")}`;
           }
-          ranges.push(start === end ? `${start}` : `${start}-${end}`);
-          
-          return `${loc.book} ${loc.chapter}:${ranges.join(', ')}`;
-        }
-      }).join('; ');
+        })
+        .join("; ");
     }
   };
 
@@ -403,46 +473,49 @@ export default function Home() {
 
     const selection = window.getSelection();
     const text = selection.toString().trim();
-    
+
     if (text.length > 0) {
       // Check if selection is within Bible content
       const range = selection.getRangeAt(0);
       const container = range.commonAncestorContainer;
-      let element = container.nodeType === 3 ? container.parentElement : container;
-      
+      let element =
+        container.nodeType === 3 ? container.parentElement : container;
+
       // Traverse up to check if we're inside bible-content
       let isInBibleContent = false;
       let current = element;
       while (current) {
-        if (current.classList?.contains('bible-content')) {
+        if (current.classList?.contains("bible-content")) {
           isInBibleContent = true;
           break;
         }
-        if (current.classList?.contains('nav-drawer') || 
-            current.classList?.contains('llm-panel') ||
-            current.classList?.contains('fixed-controls')) {
+        if (
+          current.classList?.contains("nav-drawer") ||
+          current.classList?.contains("llm-panel") ||
+          current.classList?.contains("fixed-controls")
+        ) {
           // Explicitly not in Bible content
           break;
         }
         current = current.parentElement;
       }
-      
+
       if (!isInBibleContent) {
         setContextMenuOpen(false);
         return;
       }
-      
+
       const verseData = extractVerseReference();
       setSelectedText(text);
       setSelectionData(verseData);
-      
+
       // Position context menu at the end of the selection
       const rects = range.getClientRects();
       const lastRect = rects[rects.length - 1] || range.getBoundingClientRect();
-      
+
       setContextMenuPosition({
         x: lastRect.right,
-        y: lastRect.bottom + window.scrollY + 8
+        y: lastRect.bottom + window.scrollY + 8,
       });
       setContextMenuOpen(true);
     } else {
@@ -454,36 +527,36 @@ export default function Home() {
 
   const handleCopy = async () => {
     const reference = formatVerseReference(selectionData());
-    
+
     // Get clean text without verse numbers
     const selection = window.getSelection();
     let cleanText = "";
-    
+
     if (selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       const container = range.cloneContents();
-      
+
       // Remove all verse number elements
-      const verseNumbers = container.querySelectorAll('.verse-number');
-      verseNumbers.forEach(num => num.remove());
-      
+      const verseNumbers = container.querySelectorAll(".verse-number");
+      verseNumbers.forEach((num) => num.remove());
+
       // Process each verse paragraph to maintain spacing
-      const verses = container.querySelectorAll('.verse');
+      const verses = container.querySelectorAll(".verse");
       if (verses.length > 0) {
-        const verseTexts = Array.from(verses).map(v => 
-          v.textContent.trim()
-        ).filter(t => t.length > 0);
-        cleanText = verseTexts.join(' ');
+        const verseTexts = Array.from(verses)
+          .map((v) => v.textContent.trim())
+          .filter((t) => t.length > 0);
+        cleanText = verseTexts.join(" ");
       } else {
         // Fallback if no verse elements found
-        cleanText = container.textContent
-          .replace(/\s+/g, ' ')
-          .trim();
+        cleanText = container.textContent.replace(/\s+/g, " ").trim();
       }
     }
-    
-    const textToCopy = reference ? `${reference}\n"${cleanText}"` : `"${cleanText}"`;
-    
+
+    const textToCopy = reference
+      ? `${reference}\n"${cleanText}"`
+      : `"${cleanText}"`;
+
     try {
       await navigator.clipboard.writeText(textToCopy);
       setContextMenuOpen(false);
@@ -499,46 +572,42 @@ export default function Home() {
   const getCleanTextFromSelection = () => {
     const selection = window.getSelection();
     let cleanText = "";
-    
+
     if (selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       const container = range.cloneContents();
-      
+
       // Remove all verse number elements
-      const verseNumbers = container.querySelectorAll('.verse-number');
-      verseNumbers.forEach(num => num.remove());
-      
+      const verseNumbers = container.querySelectorAll(".verse-number");
+      verseNumbers.forEach((num) => num.remove());
+
       // Process each verse paragraph to maintain spacing
-      const verses = container.querySelectorAll('.verse');
+      const verses = container.querySelectorAll(".verse");
       if (verses.length > 0) {
-        const verseTexts = Array.from(verses).map(v => 
-          v.textContent.trim()
-        ).filter(t => t.length > 0);
-        cleanText = verseTexts.join(' ');
+        const verseTexts = Array.from(verses)
+          .map((v) => v.textContent.trim())
+          .filter((t) => t.length > 0);
+        cleanText = verseTexts.join(" ");
       } else {
         // Fallback if no verse elements found
-        cleanText = container.textContent
-          .replace(/\s+/g, ' ')
-          .trim();
+        cleanText = container.textContent.replace(/\s+/g, " ").trim();
       }
     }
-    
+
     return cleanText;
   };
 
   const handleExplain = async () => {
     if (!selectedText()) return;
-    
+
     setContextMenuOpen(false);
     setLlmPanelOpen(true);
     setLlmLoading(true);
-    
+
     const reference = formatVerseReference(selectionData());
     const cleanText = getCleanTextFromSelection();
-    const prompt = reference 
-      ? `${reference}: ${cleanText}` 
-      : cleanText;
-    
+    const prompt = reference ? `${reference}: ${cleanText}` : cleanText;
+
     try {
       const response = await getLLMResponse(prompt);
       setLlmResponse(response.text);
@@ -553,7 +622,7 @@ export default function Home() {
   onMount(async () => {
     const bible = await getBible();
     setBibleStructure(bible);
-    
+
     // Load initial chapters
     try {
       const initialData = await getChapters(0, 0, 5);
@@ -565,42 +634,50 @@ export default function Home() {
     } catch (error) {
       console.error("Error loading initial chapters:", error);
     }
-    
+
     // Set up intersection observer for infinite scroll down
     observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !loading() && hasMore()) {
-          loadMore();
+          // Debounce to prevent rapid multiple loads
+          if (loadMoreTimeout) clearTimeout(loadMoreTimeout);
+          loadMoreTimeout = setTimeout(() => {
+            loadMore();
+          }, 300);
         }
       },
-      { threshold: 0.1, rootMargin: "200px" }
+      { threshold: 0.1, rootMargin: "800px" }, // Large preload distance for smooth continuous reading
     );
-    
+
     // Set up intersection observer for infinite scroll up
     topObserver = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !loadingPrev() && hasPrev()) {
-          loadPrevious();
+          // Debounce to prevent rapid multiple loads
+          if (loadPrevTimeout) clearTimeout(loadPrevTimeout);
+          loadPrevTimeout = setTimeout(() => {
+            loadPrevious();
+          }, 300);
         }
       },
-      { threshold: 0.1, rootMargin: "200px" }
+      { threshold: 0.1, rootMargin: "800px" }, // Large preload distance for smooth continuous reading
     );
-    
+
     if (sentinelRef) {
       observer.observe(sentinelRef);
     }
-    
+
     if (topSentinelRef) {
       topObserver.observe(topSentinelRef);
     }
-    
+
     // Add text selection listener (browser only)
-    if (typeof document !== 'undefined') {
+    if (typeof document !== "undefined") {
       // Track mouse state to avoid showing menu while dragging
-      document.addEventListener('mousedown', (e) => {
+      document.addEventListener("mousedown", (e) => {
         isMouseDown = true;
         // Check if clicking on context menu
-        if (e.target.closest('.context-menu')) {
+        if (e.target.closest(".context-menu")) {
           isInteractingWithContextMenu = true;
         } else {
           isInteractingWithContextMenu = false;
@@ -613,8 +690,8 @@ export default function Home() {
           setContextMenuOpen(false);
         }
       });
-      
-      document.addEventListener('mouseup', (e) => {
+
+      document.addEventListener("mouseup", (e) => {
         isMouseDown = false;
         // Reset flag after a brief delay to allow menu actions to complete
         setTimeout(() => {
@@ -624,9 +701,9 @@ export default function Home() {
           handleTextSelection(e);
         }
       });
-      
+
       // Use selectionchange for better mobile support (only when not dragging)
-      document.addEventListener('selectionchange', () => {
+      document.addEventListener("selectionchange", () => {
         // Only handle on mobile (when mouse is not being used for selection)
         if (!isMouseDown && !justClosedMenu) {
           // Small delay to ensure selection is complete
@@ -638,16 +715,19 @@ export default function Home() {
           }, 100);
         }
       });
-      
+
       // Close context menu when clicking elsewhere or selection is cleared
-      document.addEventListener('mousedown', (e) => {
-        if (!e.target.closest('.context-menu') && !e.target.closest('.verse-text')) {
+      document.addEventListener("mousedown", (e) => {
+        if (
+          !e.target.closest(".context-menu") &&
+          !e.target.closest(".verse-text")
+        ) {
           setContextMenuOpen(false);
         }
       });
-      
+
       // Also check on click to catch deselections
-      document.addEventListener('click', () => {
+      document.addEventListener("click", () => {
         // Don't close if interacting with context menu
         if (isInteractingWithContextMenu || justClosedMenu) {
           return;
@@ -671,9 +751,12 @@ export default function Home() {
     if (topObserver && topSentinelRef) {
       topObserver.unobserve(topSentinelRef);
     }
+    // Clear any pending timeouts
+    if (loadMoreTimeout) clearTimeout(loadMoreTimeout);
+    if (loadPrevTimeout) clearTimeout(loadPrevTimeout);
     // Remove event listeners (browser only)
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('mouseup', handleTextSelection);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("mouseup", handleTextSelection);
     }
   });
 
@@ -682,20 +765,70 @@ export default function Home() {
       {/* Fixed Controls */}
       <div class="fixed-controls">
         <ThemeToggle />
-        <button class="nav-toggle" onClick={() => setNavOpen(!navOpen())} aria-label="Toggle navigation">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <button
+          class="nav-toggle"
+          onClick={() => setNavOpen(!navOpen())}
+          aria-label="Toggle navigation"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             {navOpen() ? (
               // X icon
               <g>
-                <line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="16" y1="4" x2="4" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <line
+                  x1="4"
+                  y1="4"
+                  x2="16"
+                  y2="16"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="16"
+                  y1="4"
+                  x2="4"
+                  y2="16"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
               </g>
             ) : (
               // Menu icon
               <g>
-                <line x1="3" y1="5" x2="17" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="3" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <line x1="3" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <line
+                  x1="3"
+                  y1="5"
+                  x2="17"
+                  y2="5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="3"
+                  y1="10"
+                  x2="17"
+                  y2="10"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="3"
+                  y1="15"
+                  x2="17"
+                  y2="15"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
               </g>
             )}
           </svg>
@@ -704,24 +837,61 @@ export default function Home() {
 
       {/* Context Menu for Selection */}
       <Show when={contextMenuOpen()}>
-        <div 
-          class="context-menu" 
+        <div
+          class="context-menu"
           style={{
             left: `${contextMenuPosition().x}px`,
-            top: `${contextMenuPosition().y}px`
+            top: `${contextMenuPosition().y}px`,
           }}
         >
           <button class="context-menu-item" onClick={handleCopy}>
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="7" y="7" width="10" height="10" rx="1" stroke="currentColor" stroke-width="2" fill="none"/>
-              <path d="M3 3h10v2H5v8H3V3z" fill="currentColor"/>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <rect
+                x="7"
+                y="7"
+                width="10"
+                height="10"
+                rx="1"
+                stroke="currentColor"
+                stroke-width="2"
+                fill="none"
+              />
+              <path d="M3 3h10v2H5v8H3V3z" fill="currentColor" />
             </svg>
             Copy
           </button>
           <button class="context-menu-item" onClick={handleExplain}>
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="2" fill="none"/>
-              <text x="10" y="14" font-size="12" fill="currentColor" text-anchor="middle" font-weight="bold">?</text>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="10"
+                cy="10"
+                r="8"
+                stroke="currentColor"
+                stroke-width="2"
+                fill="none"
+              />
+              <text
+                x="10"
+                y="14"
+                font-size="12"
+                fill="currentColor"
+                text-anchor="middle"
+                font-weight="bold"
+              >
+                ?
+              </text>
             </svg>
             Explain
           </button>
@@ -729,13 +899,39 @@ export default function Home() {
       </Show>
 
       {/* LLM Response Panel */}
-      <div class={`llm-panel ${llmPanelOpen() ? 'open' : ''}`}>
+      <div class={`llm-panel ${llmPanelOpen() ? "open" : ""}`}>
         <div class="llm-panel-header">
           <h3 class="llm-panel-title">Response</h3>
-          <button class="llm-panel-close" onClick={() => setLlmPanelOpen(false)} aria-label="Close panel">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <line x1="16" y1="4" x2="4" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <button
+            class="llm-panel-close"
+            onClick={() => setLlmPanelOpen(false)}
+            aria-label="Close panel"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <line
+                x1="4"
+                y1="4"
+                x2="16"
+                y2="16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <line
+                x1="16"
+                y1="4"
+                x2="4"
+                y2="16"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
             </svg>
           </button>
         </div>
@@ -755,7 +951,7 @@ export default function Home() {
       </Show>
 
       {/* Navigation Drawer */}
-      <div class={`nav-drawer ${navOpen() ? 'open' : ''}`}>
+      <div class={`nav-drawer ${navOpen() ? "open" : ""}`}>
         <div class="nav-content">
           <h3 class="nav-title">Bible</h3>
           <Show when={bibleStructure()}>
@@ -770,7 +966,9 @@ export default function Home() {
                         {(chapter, chapterIdx) => (
                           <button
                             class="chapter-link"
-                            onClick={() => navigateToChapter(bookIdx(), chapterIdx())}
+                            onClick={() =>
+                              navigateToChapter(bookIdx(), chapterIdx())
+                            }
                           >
                             {chapter.number}
                           </button>
@@ -781,7 +979,7 @@ export default function Home() {
                 )}
               </For>
             </div>
-            
+
             <div class="nav-section">
               <h4 class="testament-title">New Testament</h4>
               <For each={bibleStructure().nt}>
@@ -793,7 +991,12 @@ export default function Home() {
                         {(chapter, chapterIdx) => (
                           <button
                             class="chapter-link"
-                            onClick={() => navigateToChapter(bibleStructure().ot.length + bookIdx(), chapterIdx())}
+                            onClick={() =>
+                              navigateToChapter(
+                                bibleStructure().ot.length + bookIdx(),
+                                chapterIdx(),
+                              )
+                            }
                           >
                             {chapter.number}
                           </button>
@@ -819,7 +1022,7 @@ export default function Home() {
             <div class="loading">Loading previous chapters...</div>
           </Show>
         </div>
-        
+
         <For each={groupedChapters()}>
           {(bookGroup) => (
             <div class="book-section">
@@ -827,7 +1030,9 @@ export default function Home() {
               <For each={bookGroup.chapters}>
                 {(chapter) => (
                   <div class="chapter">
-                    <h3 class="chapter-number">Chapter {chapter.chapterNumber}</h3>
+                    <h3 class="chapter-number">
+                      Chapter {chapter.chapterNumber}
+                    </h3>
                     <div class="verses">
                       <For each={chapter.verses}>
                         {(verse) => (
@@ -844,7 +1049,7 @@ export default function Home() {
             </div>
           )}
         </For>
-        
+
         <div ref={sentinelRef} class="sentinel">
           <Show when={loading()}>
             <div class="loading">Loading more chapters...</div>
