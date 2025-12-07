@@ -357,9 +357,12 @@
           const targetEl = $(`.chapter[data-index="${targetIndex}"]`);
           if (targetEl) {
             // Scroll the chapter to the top of the scroll container
+            // Subtract padding to maintain consistent spacing above the chapter header
+            // This matches the top padding of .scroll-content (40px desktop, 32px tablet, 24px mobile)
             const containerRect = container.getBoundingClientRect();
             const targetRect = targetEl.getBoundingClientRect();
-            const offset = targetRect.top - containerRect.top + container.scrollTop;
+            const topPadding = parseInt(getComputedStyle(els.scrollContent).paddingTop, 10);
+            const offset = targetRect.top - containerRect.top + container.scrollTop - topPadding;
 
             container.scrollTop = offset;
           }
