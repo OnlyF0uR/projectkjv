@@ -5,14 +5,15 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "projectkjv",
-	"main": "./.output/server/index.mjs",
-	"compatibility_date": "2025-10-11",
+	"main": "src/index.js",
+	"compatibility_date": "2025-12-05",
 	"compatibility_flags": [
-		"nodejs_compat"
+		"nodejs_compat",
+		"global_fetch_strictly_public"
 	],
 	"assets": {
-		"binding": "ASSETS",
-		"directory": "./.output/public"
+		// The path to the directory containing the `index.html` file to be served at `/`
+		"directory": "./public"
 	},
 	"observability": {
 		"enabled": true
