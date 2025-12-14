@@ -128,6 +128,8 @@
   async function loadForward() {
     if (state.isLoadingForward) return;
     if (state.maxLoaded >= state.totalChapters - 1) return;
+    // Don't load forward if nothing has been loaded yet (wait for loadAround)
+    if (state.maxLoaded < 0) return;
 
     state.isLoadingForward = true;
 
@@ -161,6 +163,8 @@
   async function loadBackward() {
     if (state.isLoadingBackward) return;
     if (state.minLoaded <= 0) return;
+    // Don't load backward if nothing has been loaded yet (wait for loadAround)
+    if (state.minLoaded === Infinity) return;
 
     state.isLoadingBackward = true;
 
@@ -259,6 +263,12 @@
     const scrollTop = container.scrollTop;
     const scrollHeight = container.scrollHeight;
     const clientHeight = container.clientHeight;
+
+    // Don't trigger loads if state hasn't been initialized yet
+    if (state.totalChapters === 0 || state.maxLoaded < 0) {
+      updateCurrentChapter();
+      return;
+    }
 
     // Distance from top
     const distanceFromTop = scrollTop;
