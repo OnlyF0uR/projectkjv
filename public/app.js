@@ -531,8 +531,50 @@
     if (!selectionInfo) return null;
 
     const reference = formatReference(selectionInfo.verses);
-    const text = selectionInfo.selectedText;
+    const { verses, range } = selectionInfo;
+    
+    // For single verse, use the actual selected text
+    if (verses.length === 1) {
+      return `${reference}\n"${selectionInfo.selectedText}"`;
+    }
+    
+    // For multiple verses, handle partial selections at start and end
+    const textParts = verses.map((v, index) => {
+      const verseText = v.textElement.textContent.trim();
+      
+      if (index === 0) {
+        // First verse - may be partially selected at the end
+        const verseRange = document.createRange();
+        verseRange.selectNodeContents(v.textElement);
+        
+        if (range.compareBoundaryPoints(Range.START_TO_START, verseRange) > 0) {
+          // Selection starts inside this verse, extract from selection start to verse end
+          const partialRange = document.createRange();
+          partialRange.setStart(range.startContainer, range.startOffset);
+          partialRange.setEnd(verseRange.endContainer, verseRange.endOffset);
+          return partialRange.toString().trim();
+        }
+        return verseText;
+      } else if (index === verses.length - 1) {
+        // Last verse - may be partially selected at the start
+        const verseRange = document.createRange();
+        verseRange.selectNodeContents(v.textElement);
+        
+        if (range.compareBoundaryPoints(Range.END_TO_END, verseRange) < 0) {
+          // Selection ends inside this verse, extract from verse start to selection end
+          const partialRange = document.createRange();
+          partialRange.setStart(verseRange.startContainer, verseRange.startOffset);
+          partialRange.setEnd(range.endContainer, range.endOffset);
+          return partialRange.toString().trim();
+        }
+        return verseText;
+      }
+      
+      // Middle verses - always fully selected
+      return verseText;
+    });
 
+    const text = textParts.join(' ');
     return `${reference}\n"${text}"`;
   }
 
